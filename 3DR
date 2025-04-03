@@ -1,0 +1,65 @@
+import open3d as o3d
+import numpy as np
+
+def load_point_cloud(file_path):
+    """Loads a point cloud from a file."""
+    pcd = o3d.io.read_point_cloud(file_path)
+    if pcd.is_empty():
+        raise ValueError("Failed to load point cloud. Check the file path and format.")
+    return pcd
+
+def estimate_normals(pcd, search_radius=0.1):
+    """Estimates normals for the given point cloud."""
+    pcd.estimate_normals(o3d.geometry.KDTreeSearchParamHybrid(
+        radius=search_radius, max_nn=30))
+    pcd.orient_normals_consistent_tangent_plane(k=10)
+    return pcd
+
+def poisson_surface_reconstruction(pcd, depth=9):
+    """Performs Poisson surface reconstruction."""
+    mesh, densities = o3d.geometry.TriangleMesh.create_from_point_cloud_poisson(pcd, depth=depth)
+    mesh.compute_vertex_normals()
+    return mesh, densities
+
+def filter_mesh(mesh, densities, density_threshold=0.01):
+    """Filters the reconstructed meshfor removing low-density areas."""
+    vertices_to_remove = densities < np.quantile(densities, density_threshold)
+    mesh.remove_vertices_by_mask(vertices_to_remove)
+    return mesh
+
+def voxel_downsampling(pcd, voxel_size=0.02):
+    """Applies voxel downsampling to reduce point cloud size preserves structure."""
+    return pcd.voxel_down_sample(voxel_size=voxel_size)
+
+def statistical_outlier_removal(pcd, nb_neighbors=20, std_ratio=2.0):
+    """Removes noise from the point cloud using statistical outlier removal."""
+    cl, ind = pcd.remove_statistical_outlier(nb_neighbors=nb_neighbors, std_ratio=std_ratio)
+    return cl
+
+def visualize_3d_data(objects, title="3D Visualization"):
+    """Visualizes a list of 3D objects."""
+    o3d.visualization.draw_geometries(objects, window_name=title)
+
+def save_mesh(mesh, output_file="reconstructed_mesh.ply"):
+    """Saves the reconstructed mesh to a file."""
+    o3d.io.write_triangle_mesh(output_file, mesh)
+    print(f"Mesh saved to {output_file}")
+
+def main():
+    file_path = "point_cloud.ply"  # Change this to your point cloud file
+    try:
+        pcd = load_point_cloud(file_path)
+        pcd = voxel_downsampling(pcd)
+        pcd = statistical_outlier_removal(pcd)
+        pcd = estimate_normals(pcd)
+        
+        mesh, densities = poisson_surface_reconstruction(pcd)
+        mesh = filter_mesh(mesh, densities)
+        
+        visualize_3d_data([pcd, mesh], title="Point Cloud & Reconstructed Mesh")
+        save_mesh(mesh)
+    except Exception as e:
+        print(f"Error: {e}")
+
+if __name__ == "__main__":
+    main()
